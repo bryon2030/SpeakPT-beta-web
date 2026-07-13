@@ -599,39 +599,74 @@
       }
     };
 
-    window.speakPtPickVoice = function (voiceRole) {
+    window.speakPtVoicePreferencesKey = "speakPtVoicePreferences";
+
+    window.speakPtLoadVoicePreferences = function () {
+      try {
+        return JSON.parse(
+          window.localStorage.getItem(window.speakPtVoicePreferencesKey) || "{}"
+        );
+      } catch (_) {
+        return {};
+      }
+    };
+
+    window.speakPtSetVoicePreference = function (voiceRole, voiceName) {
+      var preferences = window.speakPtLoadVoicePreferences();
+      preferences[(voiceRole || "default").toLowerCase()] = voiceName || "";
+      try {
+        window.localStorage.setItem(
+          window.speakPtVoicePreferencesKey,
+          JSON.stringify(preferences)
+        );
+      } catch (_) {}
+    };
+
+    window.speakPtVoiceScore = function (voice, voiceRole) {
+      var name = (voice.name || "").toLowerCase();
+      var lang = (voice.lang || "").toLowerCase();
+      var role = (voiceRole || "default").toLowerCase();
+      var score = lang === "en-us" ? 35 : lang.indexOf("en") === 0 ? 20 : -200;
+
+      if (/natural|neural|premium|enhanced/.test(name)) score += 120;
+      if (/google.*english|microsoft/.test(name)) score += 70;
+      if (/compact|espeak|festival/.test(name)) score -= 120;
+
+      var preferred = role === "you"
+        ? ["jenny", "aria", "samantha", "victoria", "zira"]
+        : ["guy", "david", "mark", "alex", "daniel"];
+      preferred.forEach(function (candidate, index) {
+        if (name.indexOf(candidate) >= 0) score += 45 - index;
+      });
+      return score;
+    };
+
+    window.speakPtEnglishVoices = function (voiceRole) {
       var voices = window.speechSynthesis
         ? window.speechSynthesis.getVoices()
         : [];
-      var englishVoices = voices.filter(function (voice) {
-        return (voice.lang || "").toLowerCase().indexOf("en") === 0;
-      });
-
-      if (!englishVoices.length) {
-        return null;
-      }
-
-      var lowerRole = (voiceRole || "").toLowerCase();
-      var preferredNames =
-        lowerRole === "you"
-          ? ["jenny", "zira", "samantha", "victoria", "female"]
-          : ["david", "mark", "alex", "daniel", "male"];
-
-      for (var i = 0; i < preferredNames.length; i += 1) {
-        var match = englishVoices.find(function (voice) {
-          return (voice.name || "")
-            .toLowerCase()
-            .includes(preferredNames[i]);
+      return voices
+        .filter(function (voice) {
+          return (voice.lang || "").toLowerCase().indexOf("en") === 0;
+        })
+        .sort(function (left, right) {
+          return window.speakPtVoiceScore(right, voiceRole) -
+            window.speakPtVoiceScore(left, voiceRole);
         });
-        if (match) {
-          return match;
-        }
-      }
+    };
 
-      if (lowerRole === "you") {
-        return englishVoices[1] || englishVoices[0];
-      }
+    window.speakPtPickVoice = function (voiceRole) {
+      var lowerRole = (voiceRole || "default").toLowerCase();
+      var englishVoices = window.speakPtEnglishVoices(lowerRole);
+      if (!englishVoices.length) return null;
 
+      var savedName = window.speakPtLoadVoicePreferences()[lowerRole];
+      if (savedName) {
+        var savedVoice = englishVoices.find(function (voice) {
+          return voice.name === savedName;
+        });
+        if (savedVoice) return savedVoice;
+      }
       return englishVoices[0];
     };
 
@@ -672,6 +707,27 @@
       });
     };
 
+    window.speakPtGetVoiceSetup = async function () {
+      await window.speakPtWaitForVoices();
+      var aiVoices = window.speakPtEnglishVoices("ai");
+      var youVoices = window.speakPtEnglishVoices("you");
+      var aiVoice = window.speakPtPickVoice("ai");
+      var youVoice = window.speakPtPickVoice("you");
+      var uniqueVoices = [];
+      [aiVoice, youVoice].concat(aiVoices, youVoices).filter(Boolean).forEach(function (voice) {
+        if (!uniqueVoices.some(function (item) { return item.name === voice.name; })) {
+          uniqueVoices.push(voice);
+        }
+      });
+      return JSON.stringify({
+        voices: uniqueVoices.slice(0, 16).map(function (voice) {
+          return { name: voice.name || "", lang: voice.lang || "" };
+        }),
+        aiVoiceName: aiVoice ? aiVoice.name : null,
+        youVoiceName: youVoice ? youVoice.name : null
+      });
+    };
+
     window.speakPtSpeakText = function (text, voiceRole, playbackRate) {
       return new Promise(async function (resolve) {
         if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
@@ -691,7 +747,7 @@
             : lowerRole === "you"
               ? 0.94
               : 0.88;
-        utterance.pitch = lowerRole === "you" ? 1.12 : 0.86;
+        utterance.pitch = lowerRole === "you" ? 1.02 : 0.98;
 
         var voice = window.speakPtPickVoice(lowerRole);
         if (voice) {
