@@ -653,11 +653,15 @@
     window.speakPtSpeakText = function (text, voiceRole) {
       return new Promise(async function (resolve) {
         if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-          resolve();
+          resolve("unsupported");
           return;
         }
 
-        await window.speakPtWaitForVoices();
+        var voices = await window.speakPtWaitForVoices();
+        if (!voices.length) {
+          resolve("no-voices");
+          return;
+        }
 
         var lowerRole = (voiceRole || "default").toLowerCase();
         var utterance = new SpeechSynthesisUtterance(text || "");
@@ -679,7 +683,7 @@
             try {
               window.speechSynthesis.cancel();
             } catch (_) {}
-            resolve();
+            resolve("timeout");
           }
         }, Math.max(3500, (text || "").length * 120));
 
@@ -687,7 +691,7 @@
           if (!settled) {
             settled = true;
             clearTimeout(fallbackTimer);
-            resolve();
+            resolve("ok");
           }
         }
 
