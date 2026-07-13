@@ -1,0 +1,720 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/SpeakPT-beta-web/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="speakpt">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>speakpt</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+  <script>
+    window.speakPtSpeechIsSupported = function () {
+      return Boolean(
+        (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
+          window.SpeechRecognition ||
+          window.webkitSpeechRecognition
+      );
+    };
+
+    window.speakPtActiveSpeech = null;
+    window.speakPtAzureTokenCache = null;
+    window.speakPtAzureTokenEndpoint =
+      "https://ticoskgbxxoyupwnubon.functions.supabase.co/azure-speech-token";
+
+    window.speakPtResolveAzureTokenEndpoint = function () {
+      var isLocalSpeakPt =
+        location.hostname === "127.0.0.1" ||
+        location.hostname === "localhost";
+      if (isLocalSpeakPt) {
+        return "/api/azure-speech-token";
+      }
+
+      var endpoint = window.speakPtAzureTokenEndpoint || "";
+      if (endpoint.indexOf("https://") === 0 || endpoint.indexOf("http://") === 0) {
+        return endpoint;
+      }
+
+      throw new Error("Azure Speech token endpoint is not configured.");
+    };
+
+    window.speakPtGetAzureToken = function () {
+      var now = Date.now();
+      var cached = window.speakPtAzureTokenCache;
+      if (cached && now - cached.createdAt < 8 * 60 * 1000) {
+        return Promise.resolve(cached.payload);
+      }
+
+      return fetch(window.speakPtResolveAzureTokenEndpoint(), {
+        method: "POST",
+        cache: "no-store"
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Azure Speech token request failed.");
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          window.speakPtAzureTokenCache = {
+            createdAt: Date.now(),
+            payload: payload
+          };
+          return payload;
+        });
+    };
+
+    window.speakPtRecordWavOnce = function () {
+      return new Promise(async function (resolve, reject) {
+        var stream = null;
+        var context = null;
+        var source = null;
+        var processor = null;
+        var timeoutId = null;
+        var silenceId = null;
+        var chunks = [];
+        var peakRms = 0;
+        var heardSpeech = false;
+        var settled = false;
+        var speechRmsThreshold = 0.006;
+        var endAfterSpeechMs = 900;
+
+        function encodeWav(samples, sampleRate) {
+          var targetRate = 16000;
+          var ratio = sampleRate / targetRate;
+          var outputLength = Math.round(samples.length / ratio);
+          var output = new Float32Array(outputLength);
+          for (var index = 0; index < outputLength; index += 1) {
+            var start = Math.floor(index * ratio);
+            var end = Math.min(Math.floor((index + 1) * ratio), samples.length);
+            var total = 0;
+            for (var inputIndex = start; inputIndex < end; inputIndex += 1) {
+              total += samples[inputIndex];
+            }
+            output[index] = total / Math.max(1, end - start);
+          }
+
+          var buffer = new ArrayBuffer(44 + output.length * 2);
+          var view = new DataView(buffer);
+          function writeText(offset, text) {
+            for (var textIndex = 0; textIndex < text.length; textIndex += 1) {
+              view.setUint8(offset + textIndex, text.charCodeAt(textIndex));
+            }
+          }
+          writeText(0, "RIFF");
+          view.setUint32(4, 36 + output.length * 2, true);
+          writeText(8, "WAVE");
+          writeText(12, "fmt ");
+          view.setUint32(16, 16, true);
+          view.setUint16(20, 1, true);
+          view.setUint16(22, 1, true);
+          view.setUint32(24, targetRate, true);
+          view.setUint32(28, targetRate * 2, true);
+          view.setUint16(32, 2, true);
+          view.setUint16(34, 16, true);
+          writeText(36, "data");
+          view.setUint32(40, output.length * 2, true);
+          for (var sampleIndex = 0; sampleIndex < output.length; sampleIndex += 1) {
+            var sample = Math.max(-1, Math.min(1, output[sampleIndex]));
+            view.setInt16(
+              44 + sampleIndex * 2,
+              sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+              true
+            );
+          }
+          return new File([buffer], "speakpt-attempt.wav", {
+            type: "audio/wav"
+          });
+        }
+
+        async function finish() {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          clearTimeout(silenceId);
+          window.speakPtActiveSpeech = null;
+          if (processor) processor.disconnect();
+          if (source) source.disconnect();
+          if (stream) {
+            stream.getTracks().forEach(function (track) {
+              track.stop();
+            });
+          }
+          var sampleRate = context ? context.sampleRate : 48000;
+          if (context) await context.close();
+
+          var totalLength = chunks.reduce(function (total, chunk) {
+            return total + chunk.length;
+          }, 0);
+          var samples = new Float32Array(totalLength);
+          var offset = 0;
+          chunks.forEach(function (chunk) {
+            samples.set(chunk, offset);
+            offset += chunk.length;
+          });
+          resolve({
+            file: encodeWav(samples, sampleRate),
+            heardSpeech: heardSpeech,
+            peakRms: peakRms
+          });
+        }
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          var AudioContext = window.AudioContext || window.webkitAudioContext;
+          context = new AudioContext();
+          source = context.createMediaStreamSource(stream);
+          processor = context.createScriptProcessor(4096, 1, 1);
+          var silentGain = context.createGain();
+          silentGain.gain.value = 0;
+          source.connect(processor);
+          processor.connect(silentGain);
+          silentGain.connect(context.destination);
+          processor.onaudioprocess = function (event) {
+            var input = event.inputBuffer.getChannelData(0);
+            var copy = new Float32Array(input.length);
+            copy.set(input);
+            chunks.push(copy);
+            var squareTotal = 0;
+            for (var index = 0; index < input.length; index += 1) {
+              squareTotal += input[index] * input[index];
+            }
+            var rms = Math.sqrt(squareTotal / input.length);
+            peakRms = Math.max(peakRms, rms);
+            if (rms >= speechRmsThreshold) {
+              heardSpeech = true;
+              clearTimeout(silenceId);
+              silenceId = setTimeout(finish, endAfterSpeechMs);
+            }
+          };
+          window.speakPtActiveSpeech = { stop: finish };
+          timeoutId = setTimeout(finish, 15000);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    };
+
+    window.speakPtSpeechAssessOnce = function (targetText) {
+      return new Promise(async function (resolve, reject) {
+        function reportError(error) {
+          var message = error && error.message ? error.message : String(error);
+          fetch("/api/client-error", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+            body: message
+          }).catch(function () {});
+          return message;
+        }
+
+        if (!window.SpeechSDK) {
+          var sdkError = new Error("Azure Speech SDK is unavailable.");
+          reportError(sdkError);
+          reject(sdkError);
+          return;
+        }
+
+        var recognizer = null;
+        var settled = false;
+
+        function finish(payload) {
+          if (settled) return;
+          settled = true;
+          window.speakPtActiveSpeech = null;
+          if (recognizer) recognizer.close();
+          resolve(JSON.stringify(payload));
+        }
+
+        try {
+          var pendingToken = window.speakPtGetAzureToken();
+          var recording = await window.speakPtRecordWavOnce();
+          if (!recording.heardSpeech) {
+            reportError(
+              new Error(
+                "Browser recording had no speech. Peak RMS: " +
+                  recording.peakRms.toFixed(5)
+              )
+            );
+            finish({ transcript: "" });
+            return;
+          }
+          var tokenPayload = await pendingToken;
+          var speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(
+            tokenPayload.data.token,
+            tokenPayload.data.region
+          );
+          speechConfig.speechRecognitionLanguage = "en-US";
+          speechConfig.setProperty(
+            SpeechSDK.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
+            "600"
+          );
+          speechConfig.setProperty(
+            SpeechSDK.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
+            "8000"
+          );
+
+          var audioConfig = SpeechSDK.AudioConfig.fromWavFileInput(
+            recording.file
+          );
+          recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+          var pronunciationConfig =
+            new SpeechSDK.PronunciationAssessmentConfig(
+              targetText || "",
+              SpeechSDK.PronunciationAssessmentGradingSystem.HundredMark,
+              SpeechSDK.PronunciationAssessmentGranularity.Phoneme,
+              true
+            );
+          if (
+            typeof pronunciationConfig.enableProsodyAssessment === "function"
+          ) {
+            pronunciationConfig.enableProsodyAssessment();
+          } else {
+            pronunciationConfig.enableProsodyAssessment = true;
+          }
+          pronunciationConfig.applyTo(recognizer);
+          recognizer.recognizeOnceAsync(
+            function (result) {
+              if (result.reason !== SpeechSDK.ResultReason.RecognizedSpeech) {
+                if (result.reason === SpeechSDK.ResultReason.Canceled) {
+                  var cancellation =
+                    SpeechSDK.CancellationDetails.fromResult(result);
+                  reportError(
+                    new Error(
+                      "Azure canceled: " +
+                        cancellation.reason +
+                        " / " +
+                        (cancellation.errorDetails || "no details")
+                    )
+                  );
+                } else {
+                  var noMatchDetail = "";
+                  if (
+                    result.reason === SpeechSDK.ResultReason.NoMatch &&
+                    SpeechSDK.NoMatchDetails
+                  ) {
+                    noMatchDetail =
+                      " / " +
+                      SpeechSDK.NoMatchDetails.fromResult(result).reason;
+                  }
+                  reportError(
+                    new Error(
+                      "Azure result reason: " + result.reason + noMatchDetail
+                    )
+                  );
+                }
+                finish({ transcript: "" });
+                return;
+              }
+              var assessment =
+                SpeechSDK.PronunciationAssessmentResult.fromResult(result);
+              var prosodyFocusWord = "";
+              var prosodyIssue = "";
+              var pronunciationFocusWord = "";
+              try {
+                var rawResult = JSON.parse(
+                  result.properties.getProperty(
+                    SpeechSDK.PropertyId.SpeechServiceResponse_JsonResult
+                  )
+                );
+                var words =
+                  rawResult.NBest && rawResult.NBest[0]
+                    ? rawResult.NBest[0].Words || []
+                    : [];
+                var lowestWord = null;
+                words.forEach(function (word) {
+                  var wordAssessment = word.PronunciationAssessment || {};
+                  var feedback = wordAssessment.Feedback || {};
+                  var breakFeedback = feedback.Break || {};
+                  var intonation = feedback.Intonation || {};
+                  var unexpected =
+                    breakFeedback.UnexpectedBreak &&
+                    breakFeedback.UnexpectedBreak.Confidence;
+                  var missing =
+                    breakFeedback.MissingBreak &&
+                    breakFeedback.MissingBreak.Confidence;
+                  var intonationErrors = intonation.ErrorTypes || [];
+
+                  if (!prosodyIssue && unexpected > 0.75) {
+                    prosodyFocusWord = word.Word || "";
+                    prosodyIssue = "UnexpectedBreak";
+                  } else if (!prosodyIssue && missing > 0.75) {
+                    prosodyFocusWord = word.Word || "";
+                    prosodyIssue = "MissingBreak";
+                  } else if (
+                    !prosodyIssue &&
+                    intonationErrors.indexOf("Monotone") >= 0
+                  ) {
+                    prosodyIssue = "Monotone";
+                  }
+
+                  var wordAccuracy = wordAssessment.AccuracyScore;
+                  if (
+                    typeof wordAccuracy === "number" &&
+                    (!lowestWord || wordAccuracy < lowestWord.score)
+                  ) {
+                    lowestWord = {
+                      word: word.Word || "",
+                      score: wordAccuracy
+                    };
+                  }
+                });
+                if (!prosodyIssue && lowestWord) {
+                  prosodyFocusWord = lowestWord.word;
+                  prosodyIssue = "FocusWord";
+                }
+                if (lowestWord) {
+                  pronunciationFocusWord = lowestWord.word;
+                }
+              } catch (_) {}
+              finish({
+                transcript: result.text || "",
+                pronunciationScore: Math.round(assessment.pronunciationScore || 0),
+                accuracyScore: Math.round(assessment.accuracyScore || 0),
+                fluencyScore: Math.round(assessment.fluencyScore || 0),
+                completenessScore: Math.round(assessment.completenessScore || 0),
+                prosodyScore: Math.round(assessment.prosodyScore || 0),
+                prosodyFocusWord: prosodyFocusWord,
+                prosodyIssue: prosodyIssue,
+                pronunciationFocusWord: pronunciationFocusWord
+              });
+            },
+            function (error) {
+              if (!settled) {
+                var recognitionError =
+                  new Error(error || "Azure Speech assessment failed.");
+                reportError(recognitionError);
+                finish({
+                  transcript: "",
+                  error: recognitionError.message
+                });
+              }
+            }
+          );
+        } catch (error) {
+          reportError(error);
+          finish({
+            transcript: "",
+            error: error && error.message ? error.message : String(error)
+          });
+        }
+      });
+    };
+
+    window.addEventListener("load", function () {
+      window.speakPtGetAzureToken().catch(function () {});
+    });
+
+    window.speakPtSpeechRecognizeOnce = function () {
+      return new Promise(function (resolve, reject) {
+        var SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        var settled = false;
+        var timeoutId = null;
+        var silenceTimeoutId = null;
+        var micStream = null;
+        var recognition = null;
+        var transcriptParts = [];
+        var interimTranscript = "";
+
+        function collectedTranscript() {
+          return transcriptParts
+            .concat(interimTranscript ? [interimTranscript] : [])
+            .join(" ")
+            .trim();
+        }
+
+        function finishWithTranscript(transcript) {
+          if (settled) return;
+          settled = true;
+          window.speakPtActiveSpeech = null;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          if (silenceTimeoutId) {
+            clearTimeout(silenceTimeoutId);
+          }
+          if (micStream) {
+            micStream.getTracks().forEach(function (track) {
+              track.stop();
+            });
+          }
+          resolve(transcript || "");
+        }
+
+        function finishWithError(error) {
+          if (settled) return;
+          settled = true;
+          window.speakPtActiveSpeech = null;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          if (silenceTimeoutId) {
+            clearTimeout(silenceTimeoutId);
+          }
+          if (micStream) {
+            micStream.getTracks().forEach(function (track) {
+              track.stop();
+            });
+          }
+          reject(error);
+        }
+
+        function startRecognition() {
+          if (!SpeechRecognition) {
+            finishWithTranscript("");
+            return;
+          }
+
+          recognition = new SpeechRecognition();
+          recognition.lang = "en-US";
+          recognition.interimResults = true;
+          recognition.maxAlternatives = 1;
+          recognition.continuous = true;
+
+          recognition.onresult = function (event) {
+            for (var index = event.resultIndex; index < event.results.length; index += 1) {
+              var result = event.results[index];
+              if (result.isFinal && result[0]) {
+                var finalPart = (result[0].transcript || "").trim();
+                if (finalPart) {
+                  transcriptParts.push(finalPart);
+                }
+                interimTranscript = "";
+              } else if (result[0]) {
+                interimTranscript = (result[0].transcript || "").trim();
+              }
+            }
+
+            if (silenceTimeoutId) {
+              clearTimeout(silenceTimeoutId);
+            }
+            silenceTimeoutId = setTimeout(function () {
+              try {
+                recognition.stop();
+              } catch (_) {}
+              finishWithTranscript(collectedTranscript());
+            }, 900);
+          };
+
+          recognition.onerror = function (event) {
+            finishWithError(new Error(event.error || "Speech recognition failed."));
+          };
+
+          recognition.onend = function () {
+            finishWithTranscript(collectedTranscript());
+          };
+
+          window.speakPtActiveSpeech = {
+            recognition: recognition,
+            stop: function () {
+              try {
+                recognition.stop();
+              } catch (_) {}
+              finishWithTranscript(collectedTranscript());
+            }
+          };
+
+          timeoutId = setTimeout(function () {
+            try {
+              recognition.stop();
+            } catch (_) {}
+            finishWithTranscript(collectedTranscript());
+          }, 15000);
+
+          try {
+            recognition.start();
+          } catch (error) {
+            finishWithError(error);
+          }
+        }
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          navigator.mediaDevices
+            .getUserMedia({ audio: true })
+            .then(function (stream) {
+              micStream = stream;
+              startRecognition();
+            })
+            .catch(function (error) {
+              finishWithError(error);
+            });
+        } else {
+          startRecognition();
+        }
+      });
+    };
+
+    window.speakPtSpeechStopRecognizing = function () {
+      if (window.speakPtActiveSpeech && window.speakPtActiveSpeech.stop) {
+        window.speakPtActiveSpeech.stop();
+      }
+    };
+
+    window.speakPtPickVoice = function (voiceRole) {
+      var voices = window.speechSynthesis
+        ? window.speechSynthesis.getVoices()
+        : [];
+      var englishVoices = voices.filter(function (voice) {
+        return (voice.lang || "").toLowerCase().indexOf("en") === 0;
+      });
+
+      if (!englishVoices.length) {
+        return null;
+      }
+
+      var lowerRole = (voiceRole || "").toLowerCase();
+      var preferredNames =
+        lowerRole === "you"
+          ? ["jenny", "zira", "samantha", "victoria", "female"]
+          : ["david", "mark", "alex", "daniel", "male"];
+
+      for (var i = 0; i < preferredNames.length; i += 1) {
+        var match = englishVoices.find(function (voice) {
+          return (voice.name || "")
+            .toLowerCase()
+            .includes(preferredNames[i]);
+        });
+        if (match) {
+          return match;
+        }
+      }
+
+      if (lowerRole === "you") {
+        return englishVoices[1] || englishVoices[0];
+      }
+
+      return englishVoices[0];
+    };
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = function () {
+        window.speechSynthesis.getVoices();
+      };
+    }
+
+    window.speakPtSpeakText = function (text, voiceRole) {
+      return new Promise(function (resolve) {
+        if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+          resolve();
+          return;
+        }
+
+        var lowerRole = (voiceRole || "default").toLowerCase();
+        var utterance = new SpeechSynthesisUtterance(text || "");
+        utterance.lang = "en-US";
+        utterance.rate = lowerRole === "you" ? 0.94 : 0.88;
+        utterance.pitch = lowerRole === "you" ? 1.12 : 0.86;
+
+        var voice = window.speakPtPickVoice(lowerRole);
+        if (voice) {
+          utterance.voice = voice;
+          utterance.lang = voice.lang || "en-US";
+        }
+
+        utterance.onend = function () {
+          resolve();
+        };
+        utterance.onerror = function () {
+          resolve();
+        };
+
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      });
+    };
+
+    window.speakPtLoadTrainingHistory = function () {
+      try {
+        return window.localStorage.getItem("speakPtTrainingHistory") || "";
+      } catch (_) {
+        return "";
+      }
+    };
+
+    window.speakPtSaveTrainingHistory = function (json) {
+      try {
+        window.localStorage.setItem("speakPtTrainingHistory", json || "[]");
+      } catch (_) {}
+    };
+  </script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script>
+    (function () {
+      function loadFlutterBootstrap() {
+        var script = document.createElement("script");
+        script.src = isLocalSpeakPt
+          ? "flutter_bootstrap.js?v=" + Date.now()
+          : "flutter_bootstrap.js";
+        script.async = true;
+        document.body.appendChild(script);
+      }
+
+      var isLocalSpeakPt =
+        location.hostname === "127.0.0.1" ||
+        location.hostname === "localhost";
+
+      if (isLocalSpeakPt && "serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then(function (registrations) {
+            return Promise.all(
+              registrations.map(function (registration) {
+                return registration.unregister();
+              })
+            );
+          })
+          .then(function () {
+            if (window.caches) {
+              return caches.keys().then(function (names) {
+                return Promise.all(
+                  names.map(function (name) {
+                    return caches.delete(name);
+                  })
+                );
+              });
+            }
+          })
+          .catch(function () {})
+          .finally(loadFlutterBootstrap);
+        return;
+      }
+
+      loadFlutterBootstrap();
+    })();
+  </script>
+</body>
+</html>
