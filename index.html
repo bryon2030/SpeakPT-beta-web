@@ -619,16 +619,50 @@
       };
     }
 
-    window.speakPtSpeakText = function (text, voiceRole) {
+    window.speakPtWaitForVoices = function () {
       return new Promise(function (resolve) {
+        if (!window.speechSynthesis) {
+          resolve([]);
+          return;
+        }
+
+        var voices = window.speechSynthesis.getVoices();
+        if (voices.length) {
+          resolve(voices);
+          return;
+        }
+
+        var settled = false;
+        var timeoutId = setTimeout(function () {
+          if (!settled) {
+            settled = true;
+            resolve(window.speechSynthesis.getVoices());
+          }
+        }, 900);
+
+        window.speechSynthesis.onvoiceschanged = function () {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeoutId);
+            resolve(window.speechSynthesis.getVoices());
+          }
+        };
+      });
+    };
+
+    window.speakPtSpeakText = function (text, voiceRole) {
+      return new Promise(async function (resolve) {
         if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
           resolve();
           return;
         }
 
+        await window.speakPtWaitForVoices();
+
         var lowerRole = (voiceRole || "default").toLowerCase();
         var utterance = new SpeechSynthesisUtterance(text || "");
         utterance.lang = "en-US";
+        utterance.volume = 1;
         utterance.rate = lowerRole === "you" ? 0.94 : 0.88;
         utterance.pitch = lowerRole === "you" ? 1.12 : 0.86;
 
@@ -638,15 +672,40 @@
           utterance.lang = voice.lang || "en-US";
         }
 
+        var settled = false;
+        var fallbackTimer = setTimeout(function () {
+          if (!settled) {
+            settled = true;
+            try {
+              window.speechSynthesis.cancel();
+            } catch (_) {}
+            resolve();
+          }
+        }, Math.max(3500, (text || "").length * 120));
+
+        function finish() {
+          if (!settled) {
+            settled = true;
+            clearTimeout(fallbackTimer);
+            resolve();
+          }
+        }
+
         utterance.onend = function () {
-          resolve();
+          finish();
         };
         utterance.onerror = function () {
-          resolve();
+          finish();
         };
 
         window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
         window.speechSynthesis.speak(utterance);
+        setTimeout(function () {
+          try {
+            window.speechSynthesis.resume();
+          } catch (_) {}
+        }, 120);
       });
     };
 
