@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "contentVersion": "2026-07-16.1",
+  "features": {
+    "weeklyPtScore": true,
+    "betaFeedback": true
+  },
+  "ptScore": {
+    "dailyBasePoints": 20,
+    "repPoints": 3,
+    "maxDailyReps": 10,
+    "passPoints": 5,
+    "maxDailyPasses": 5,
+    "retryPoints": 2,
+    "maxDailyRetries": 4,
+    "expressionPoints": 5,
+    "maxDailyExpressions": 3,
+    "consistencyTargetDays": 6,
+    "multipliers": {
+      "0": 1.0,
+      "1": 1.0,
+      "2": 1.1,
+      "3": 1.2,
+      "4": 1.35,
+      "5": 1.5,
+      "6": 1.8,
+      "7": 2.0
+    }
+  },
+  "disabledScenarioTitles": [],
+  "scenarioUpserts": []
+}

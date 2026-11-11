@@ -1,0 +1,221 @@
+{
+    "schemaVersion":  1,
+    "provider":  "Azure Speech Free F0 static assets",
+    "generatedAtUtc":  "2026-07-20T12:21:54.8128688Z",
+    "roles":  {
+                  "ai":  {
+                             "voice":  "en-US-LunaNeural",
+                             "gender":  "female",
+                             "locale":  "en-US",
+                             "style":  "conversation"
+                         },
+                  "you":  {
+                              "voice":  "en-US-AndrewMultilingualNeural",
+                              "gender":  "male",
+                              "locale":  "en-US",
+                              "style":  "neutral"
+                          }
+              },
+    "clips":  [
+                  {
+                      "text":  "Can I help you find anything?",
+                      "ai":  "voices/ai/001.wav",
+                      "you":  "voices/you/001.wav"
+                  },
+                  {
+                      "text":  "I\u0027m just browsing, thanks.",
+                      "ai":  "voices/ai/002.wav",
+                      "you":  "voices/you/002.wav"
+                  },
+                  {
+                      "text":  "No problem. Let me know if you need anything.",
+                      "ai":  "voices/ai/003.wav",
+                      "you":  "voices/you/003.wav"
+                  },
+                  {
+                      "text":  "Will do. Thanks.",
+                      "ai":  "voices/ai/004.wav",
+                      "you":  "voices/you/004.wav"
+                  },
+                  {
+                      "text":  "Hi, what can I get for you?",
+                      "ai":  "voices/ai/005.wav",
+                      "you":  "voices/you/005.wav"
+                  },
+                  {
+                      "text":  "Could I get an iced latte, please?",
+                      "ai":  "voices/ai/006.wav",
+                      "you":  "voices/you/006.wav"
+                  },
+                  {
+                      "text":  "Anything else?",
+                      "ai":  "voices/ai/007.wav",
+                      "you":  "voices/you/007.wav"
+                  },
+                  {
+                      "text":  "That\u0027s all, thank you.",
+                      "ai":  "voices/ai/008.wav",
+                      "you":  "voices/you/008.wav"
+                  },
+                  {
+                      "text":  "Are you ready to order?",
+                      "ai":  "voices/ai/009.wav",
+                      "you":  "voices/you/009.wav"
+                  },
+                  {
+                      "text":  "What do you recommend?",
+                      "ai":  "voices/ai/010.wav",
+                      "you":  "voices/you/010.wav"
+                  },
+                  {
+                      "text":  "The grilled chicken is very popular.",
+                      "ai":  "voices/ai/011.wav",
+                      "you":  "voices/you/011.wav"
+                  },
+                  {
+                      "text":  "I\u0027ll have that, please.",
+                      "ai":  "voices/ai/012.wav",
+                      "you":  "voices/you/012.wav"
+                  },
+                  {
+                      "text":  "Hi, how can I help you?",
+                      "ai":  "voices/ai/013.wav",
+                      "you":  "voices/you/013.wav"
+                  },
+                  {
+                      "text":  "I have a reservation under Minji Kim.",
+                      "ai":  "voices/ai/014.wav",
+                      "you":  "voices/you/014.wav"
+                  },
+                  {
+                      "text":  "I found it. May I see your passport?",
+                      "ai":  "voices/ai/015.wav",
+                      "you":  "voices/you/015.wav"
+                  },
+                  {
+                      "text":  "Sure. Here you go.",
+                      "ai":  "voices/ai/016.wav",
+                      "you":  "voices/you/016.wav"
+                  },
+                  {
+                      "text":  "Hi, do you need some help?",
+                      "ai":  "voices/ai/017.wav",
+                      "you":  "voices/you/017.wav"
+                  },
+                  {
+                      "text":  "How do I get to the nearest subway station?",
+                      "ai":  "voices/ai/018.wav",
+                      "you":  "voices/you/018.wav"
+                  },
+                  {
+                      "text":  "Go straight and turn left at the corner.",
+                      "ai":  "voices/ai/019.wav",
+                      "you":  "voices/you/019.wav"
+                  },
+                  {
+                      "text":  "Got it. Thank you so much.",
+                      "ai":  "voices/ai/020.wav",
+                      "you":  "voices/you/020.wav"
+                  },
+                  {
+                      "text":  "Where are you headed?",
+                      "ai":  "voices/ai/021.wav",
+                      "you":  "voices/you/021.wav"
+                  },
+                  {
+                      "text":  "Could you take me to Central Station?",
+                      "ai":  "voices/ai/022.wav",
+                      "you":  "voices/you/022.wav"
+                  },
+                  {
+                      "text":  "Sure. It should take about twenty minutes.",
+                      "ai":  "voices/ai/023.wav",
+                      "you":  "voices/you/023.wav"
+                  },
+                  {
+                      "text":  "Sounds good. Thank you.",
+                      "ai":  "voices/ai/024.wav",
+                      "you":  "voices/you/024.wav"
+                  },
+                  {
+                      "text":  "Hello, can I help you?",
+                      "ai":  "voices/ai/025.wav",
+                      "you":  "voices/you/025.wav"
+                  },
+                  {
+                      "text":  "Could you tell me where gate twelve is?",
+                      "ai":  "voices/ai/026.wav",
+                      "you":  "voices/you/026.wav"
+                  },
+                  {
+                      "text":  "It is down this hall on your right.",
+                      "ai":  "voices/ai/027.wav",
+                      "you":  "voices/you/027.wav"
+                  },
+                  {
+                      "text":  "Is it far from here?",
+                      "ai":  "voices/ai/028.wav",
+                      "you":  "voices/you/028.wav"
+                  },
+                  {
+                      "text":  "Hi, what can I help you with?",
+                      "ai":  "voices/ai/029.wav",
+                      "you":  "voices/you/029.wav"
+                  },
+                  {
+                      "text":  "Do you have anything for a sore throat?",
+                      "ai":  "voices/ai/030.wav",
+                      "you":  "voices/you/030.wav"
+                  },
+                  {
+                      "text":  "Yes. Do you have a fever?",
+                      "ai":  "voices/ai/031.wav",
+                      "you":  "voices/you/031.wav"
+                  },
+                  {
+                      "text":  "No, I don\u0027t have a fever.",
+                      "ai":  "voices/ai/032.wav",
+                      "you":  "voices/you/032.wav"
+                  },
+                  {
+                      "text":  "Does the new process make sense?",
+                      "ai":  "voices/ai/033.wav",
+                      "you":  "voices/you/033.wav"
+                  },
+                  {
+                      "text":  "Could you go over that one more time?",
+                      "ai":  "voices/ai/034.wav",
+                      "you":  "voices/you/034.wav"
+                  },
+                  {
+                      "text":  "Of course. I will show you step by step.",
+                      "ai":  "voices/ai/035.wav",
+                      "you":  "voices/you/035.wav"
+                  },
+                  {
+                      "text":  "That would be really helpful.",
+                      "ai":  "voices/ai/036.wav",
+                      "you":  "voices/you/036.wav"
+                  },
+                  {
+                      "text":  "Hi, I do not think we have met.",
+                      "ai":  "voices/ai/037.wav",
+                      "you":  "voices/you/037.wav"
+                  },
+                  {
+                      "text":  "How do you know the host?",
+                      "ai":  "voices/ai/038.wav",
+                      "you":  "voices/you/038.wav"
+                  },
+                  {
+                      "text":  "We used to work together. How about you?",
+                      "ai":  "voices/ai/039.wav",
+                      "you":  "voices/you/039.wav"
+                  },
+                  {
+                      "text":  "We met through a mutual friend.",
+                      "ai":  "voices/ai/040.wav",
+                      "you":  "voices/you/040.wav"
+                  }
+              ]
+}
